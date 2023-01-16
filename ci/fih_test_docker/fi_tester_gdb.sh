@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2020 Arm Limited
+# Copyright (c) 2020-2022 Arm Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,6 +40,10 @@ function skip_instruction {
 
     cat >commands.gdb <<EOF
 target remote localhost: 1234
+file $IMAGE_DIR/bl2.axf
+b boot_go_for_image_id if image_id == 0
+continue
+delete breakpoints 1
 b *$SKIP_ADDRESS
 continue&
 eval "shell sleep 0.5"
@@ -104,7 +108,7 @@ EOF
                 echo "    test_exec_ok: True"
                 echo "    skipped: True"
                 echo "    boot: False"
-                echo "    last_line: '$LAST_LINE' "
+                echo "    last_line: \"$LAST_LINE\" "
             fi
         else
             # The target was not stopped at the desired address.
@@ -138,7 +142,7 @@ usage() {
 
 #defaults
 SKIP=2
-BIN_DIR=$(pwd)/install/outputs/MPS2/AN521
+BIN_DIR=$(pwd)/install/outputs
 AXF_FILE=$BIN_DIR/bl2.axf
 GDB=gdb-multiarch
 BOOTLOADER=true

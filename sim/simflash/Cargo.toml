@@ -2,10 +2,9 @@
 name = "simflash"
 version = "0.1.0"
 authors = ["David Brown <david.brown@linaro.org>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-failure = "0.1.6"
-failure_derive = "0.1.6"
-rand = "0.7"
+rand = "0.8"
 log = "0.4"
+thiserror = "1.0"

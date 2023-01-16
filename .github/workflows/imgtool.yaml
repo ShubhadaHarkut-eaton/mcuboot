@@ -1,10 +1,14 @@
 on:
   push:
     branches:
-      - master
+      - main
       - v*-branch
 
 name: imgtool
+
+concurrency:
+  group: imgtool-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   environment:

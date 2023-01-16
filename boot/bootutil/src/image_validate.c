@@ -40,8 +40,9 @@
 
 #include "mcuboot_config/mcuboot_config.h"
 
-#ifndef MCUBOOT_X509
-
+#ifdef MCUBOOT_ENC_IMAGES
+#include "bootutil/enc_key.h"
+#endif
 #if defined(MCUBOOT_SIGN_RSA)
 #include "mbedtls/rsa.h"
 #endif
@@ -55,7 +56,7 @@
 
 #include "bootutil_priv.h"
 #include "image_util.h"
-
+#ifndef MCUBOOT_X509
 /*
  * Currently, we only support being able to verify one type of
  * signature, because there is a single verification function that we
@@ -141,7 +142,7 @@ bootutil_find_key(uint8_t image_index, uint8_t *key, uint16_t key_len)
 
     rc = boot_retrieve_public_key_hash(image_index, key_hash, &key_hash_size);
     if (rc) {
-        return rc;
+        return -1;
     }
 
     /* Adding hardening to avoid this potential attack:
@@ -162,7 +163,6 @@ bootutil_find_key(uint8_t image_index, uint8_t *key, uint16_t key_len)
 #endif /* !MCUBOOT_HW_KEY */
 #endif
 
-#ifdef MCUBOOT_HW_ROLLBACK_PROT
 /**
  * Reads the value of an image's security counter.
  *
@@ -222,7 +222,6 @@ bootutil_get_img_security_cnt(struct image_header *hdr,
 
     return 0;
 }
-#endif /* MCUBOOT_HW_ROLLBACK_PROT */
 
 /*
  * Verify the integrity of the image.
@@ -269,6 +268,11 @@ bootutil_img_validate(struct enc_key_data *enc_state, int image_index,
 
     rc = bootutil_tlv_iter_begin(&it, hdr, fap, IMAGE_TLV_ANY, false);
     if (rc) {
+        goto out;
+    }
+
+    if (it.tlv_end > bootutil_max_image_size(fap)) {
+        rc = -1;
         goto out;
     }
 

@@ -1,6 +1,6 @@
 # Copyright 2018 Nordic Semiconductor ASA
 # Copyright 2017-2020 Linaro Limited
-# Copyright 2019-2020 Arm Limited
+# Copyright 2019-2021 Arm Limited
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -43,7 +43,7 @@ IMAGE_HEADER_SIZE = 32
 BIN_EXT = "bin"
 INTEL_HEX_EXT = "hex"
 DEFAULT_MAX_SECTORS = 128
-MAX_ALIGN = 8
+DEFAULT_MAX_ALIGN = 8
 DEP_IMAGES_KEY = "images"
 DEP_VERSIONS_KEY = "versions"
 MAX_SW_TYPE_LENGTH = 12  # Bytes
@@ -51,7 +51,8 @@ MAX_SW_TYPE_LENGTH = 12  # Bytes
 # Image header flags.
 IMAGE_F = {
         'PIC':                   0x0000001,
-        'ENCRYPTED':             0x0000004,
+        'ENCRYPTED_AES128':      0x0000004,
+        'ENCRYPTED_AES256':      0x0000008,
         'NON_BOOTABLE':          0x0000010,
         'RAM_LOAD':              0x0000020,
         'ROM_FIXED':             0x0000100,
@@ -67,7 +68,7 @@ TLV_VALUES = {
         'RSA3072': 0x23,
         'ED25519': 0x24,
         'ENCRSA2048': 0x30,
-        'ENCKW128': 0x31,
+        'ENCKW': 0x31,
         'ENCEC256': 0x32,
         'ENCX25519': 0x33,
         'DEPENDENCY': 0x40,
@@ -80,12 +81,6 @@ TLV_INFO_SIZE = 4
 TLV_INFO_MAGIC = 0x6907
 TLV_PROT_INFO_MAGIC = 0x6908
 
-boot_magic = bytes([
-    0x77, 0xc2, 0x95, 0xf3,
-    0x60, 0xd2, 0xef, 0x7f,
-    0x35, 0x52, 0x50, 0x0f,
-    0x2c, 0xb6, 0x79, 0x80, ])
-
 STRUCT_ENDIAN_DICT = {
         'little': '<',
         'big':    '>'
@@ -97,6 +92,9 @@ VerifyResult = Enum('VerifyResult',
                     INVALID_SIGNATURE
                     """)
 
+def align_up(num, align):
+    assert (align & (align - 1) == 0) and align != 0
+    return (num + (align - 1)) & ~(align - 1)
 
 class TLV():
     def __init__(self, endian, magic=TLV_INFO_MAGIC):
@@ -134,7 +132,7 @@ class Image():
                  slot_size=0, max_sectors=DEFAULT_MAX_SECTORS,
                  overwrite_only=False, endian="little", load_addr=0,
                  rom_fixed=None, erased_val=None, save_enctlv=False,
-                 security_counter=None):
+                 security_counter=None, max_align=None):
 
         if load_addr and rom_fixed:
             raise click.UsageError("Can not set rom_fixed and load_addr at the same time")
@@ -157,6 +155,22 @@ class Image():
         self.enckey = None
         self.save_enctlv = save_enctlv
         self.enctlv_len = 0
+        self.max_align = max(DEFAULT_MAX_ALIGN, align) if max_align is None else int(max_align)
+
+        if self.max_align == DEFAULT_MAX_ALIGN:
+            self.boot_magic = bytes([
+                0x77, 0xc2, 0x95, 0xf3,
+                0x60, 0xd2, 0xef, 0x7f,
+                0x35, 0x52, 0x50, 0x0f,
+                0x2c, 0xb6, 0x79, 0x80, ])
+        else:
+            align_lsb = self.max_align & 0x00ff
+            align_msb = (self.max_align & 0xff00) >> 8
+            self.boot_magic = bytes([
+                align_lsb, align_msb, 0x2d, 0xe1,
+                0x5d, 0x29, 0x41, 0x0b,
+                0x8d, 0x77, 0x67, 0x9c,
+                0x11, 0x0f, 0x1f, 0x8a, ])
 
         if security_counter == 'auto':
             # Security counter has not been explicitly provided,
@@ -228,12 +242,14 @@ class Image():
                                                   self.save_enctlv,
                                                   self.enctlv_len)
                 trailer_addr = (self.base_addr + self.slot_size) - trailer_size
-                padding = bytearray([self.erased_val] * 
-                                    (trailer_size - len(boot_magic)))
                 if self.confirm and not self.overwrite_only:
-                    padding[-MAX_ALIGN] = 0x01  # image_ok = 0x01
-                padding += boot_magic
-                h.puts(trailer_addr, bytes(padding))
+                    magic_align_size = align_up(len(self.boot_magic), self.max_align)
+                    image_ok_idx = -(magic_align_size + self.max_align)
+                    flag = bytearray([self.erased_val] * self.max_align)
+                    flag[0] = 0x01 # image_ok = 0x01
+                    h.puts(trailer_addr + trailer_size + image_ok_idx, bytes(flag))
+                h.puts(trailer_addr + (trailer_size - len(self.boot_magic)),
+                       bytes(self.boot_magic))
             h.tofile(path, 'hex')
         else:
             if self.pad:
@@ -288,12 +304,19 @@ class Image():
         return cipherkey, ciphermac, pubk
 
     def create(self, key, public_key_format, enckey, dependencies=None,
-               sw_type=None, custom_tlvs=None):
+               sw_type=None, custom_tlvs=None, encrypt_keylen=128, clear=False, fixed_sig=None, pub_key=None, vector_to_sign=None):
         self.enckey = enckey
 
         # Calculate the hash of the public key
         if key is not None:
             pub = key.get_public_bytes()
+            sha = hashlib.sha256()
+            sha.update(pub)
+            pubbytes = sha.digest()
+        elif pub_key is not None:
+            if hasattr(pub_key, 'sign'):
+                print(os.path.basename(__file__) + ": sign the payload")
+            pub = pub_key.get_public_bytes()
             sha = hashlib.sha256()
             sha.update(pub)
             pubbytes = sha.digest()
@@ -361,7 +384,10 @@ class Image():
                     self.payload.extend(pad)
 
         # This adds the header to the payload as well
-        self.add_header(enckey, protected_tlv_size)
+        if encrypt_keylen == 256:
+            self.add_header(enckey, protected_tlv_size, 256)
+        else:
+            self.add_header(enckey, protected_tlv_size)
 
         prot_tlv = TLV(self.endian, TLV_PROT_INFO_MAGIC)
 
@@ -408,20 +434,39 @@ class Image():
 
         tlv.add('SHA256', digest)
 
-        if key is not None:
+        if vector_to_sign == 'payload':
+            # Stop amending data to the image
+            # Just keep data vector which is expected to be signed
+            print(os.path.basename(__file__) + ': export payload')
+            return
+        elif vector_to_sign == 'digest':
+            self.payload = digest
+            print(os.path.basename(__file__) + ': export digest')
+            return
+
+        if key is not None or fixed_sig is not None:
             if public_key_format == 'hash':
                 tlv.add('KEYHASH', pubbytes)
             else:
                 tlv.add('PUBKEY', pub)
 
-            # `sign` expects the full image payload (sha256 done internally),
-            # while `sign_digest` expects only the digest of the payload
+            if key is not None and fixed_sig is None:
+                # `sign` expects the full image payload (sha256 done internally),
+                # while `sign_digest` expects only the digest of the payload
 
-            if hasattr(key, 'sign'):
-                sig = key.sign(bytes(self.payload))
+                if hasattr(key, 'sign'):
+                    print(os.path.basename(__file__) + ": sign the payload")
+                    sig = key.sign(bytes(self.payload))
+                else:
+                    print(os.path.basename(__file__) + ": sign the digest")
+                    sig = key.sign_digest(digest)
+                tlv.add(key.sig_tlv(), sig)
+                self.signature = sig
+            elif fixed_sig is not None and key is None:
+                tlv.add(pub_key.sig_tlv(), fixed_sig['value'])
+                self.signature = fixed_sig['value']
             else:
-                sig = key.sign_digest(digest)
-            tlv.add(key.sig_tlv(), sig)
+                raise click.UsageError("Can not sign using key and provide fixed-signature at the same time")
 
         # At this point the image was hashed + signed, we can remove the
         # protected TLVs from the payload (will be re-added later)
@@ -429,7 +474,10 @@ class Image():
             self.payload = self.payload[:protected_tlv_off]
 
         if enckey is not None:
-            plainkey = os.urandom(16)
+            if encrypt_keylen == 256:
+                plainkey = os.urandom(32)
+            else:
+                plainkey = os.urandom(16)
 
             if isinstance(enckey, rsa.RSAPublic):
                 cipherkey = enckey._get_public().encrypt(
@@ -449,25 +497,32 @@ class Image():
                 else:
                     tlv.add('ENCX25519', enctlv)
 
-            nonce = bytes([0] * 16)
-            cipher = Cipher(algorithms.AES(plainkey), modes.CTR(nonce),
-                            backend=default_backend())
-            encryptor = cipher.encryptor()
-            img = bytes(self.payload[self.header_size:])
-            self.payload[self.header_size:] = \
-                encryptor.update(img) + encryptor.finalize()
+            if not clear:
+                nonce = bytes([0] * 16)
+                cipher = Cipher(algorithms.AES(plainkey), modes.CTR(nonce),
+                                backend=default_backend())
+                encryptor = cipher.encryptor()
+                img = bytes(self.payload[self.header_size:])
+                self.payload[self.header_size:] = \
+                    encryptor.update(img) + encryptor.finalize()
 
         self.payload += prot_tlv.get()
         self.payload += tlv.get()
 
         self.check_trailer()
 
-    def add_header(self, enckey, protected_tlv_size):
+    def get_signature(self):
+        return self.signature
+
+    def add_header(self, enckey, protected_tlv_size, aes_length=128):
         """Install the image header."""
 
         flags = 0
         if enckey is not None:
-            flags |= IMAGE_F['ENCRYPTED']
+            if aes_length == 128:
+                flags |= IMAGE_F['ENCRYPTED_AES128']
+            else:
+                flags |= IMAGE_F['ENCRYPTED_AES256']
         if self.load_addr != 0:
             # Indicates that this image should be loaded into RAM
             # instead of run directly from flash.
@@ -507,10 +562,11 @@ class Image():
                       save_enctlv, enctlv_len):
         # NOTE: should already be checked by the argument parser
         magic_size = 16
+        magic_align_size = align_up(magic_size, self.max_align)
         if overwrite_only:
-            return MAX_ALIGN * 2 + magic_size
+            return self.max_align * 2 + magic_align_size
         else:
-            if write_size not in set([1, 2, 4, 8]):
+            if write_size not in set([1, 2, 4, 8, 16, 32]):
                 raise click.BadParameter("Invalid alignment: {}".format(
                     write_size))
             m = DEFAULT_MAX_SECTORS if max_sectors is None else max_sectors
@@ -518,12 +574,12 @@ class Image():
             if enckey is not None:
                 if save_enctlv:
                     # TLV saved by the bootloader is aligned
-                    keylen = (int((enctlv_len - 1) / MAX_ALIGN) + 1) * MAX_ALIGN
+                    keylen = align_up(enctlv_len, self.max_align)
                 else:
-                    keylen = 16
+                    keylen = align_up(16, self.max_align)
                 trailer += keylen * 2  # encryption keys
-            trailer += MAX_ALIGN * 4  # image_ok/copy_done/swap_info/swap_size
-            trailer += magic_size
+            trailer += self.max_align * 4  # image_ok/copy_done/swap_info/swap_size
+            trailer += magic_align_size
             return trailer
 
     def pad_to(self, size):
@@ -533,10 +589,13 @@ class Image():
                                    self.save_enctlv, self.enctlv_len)
         padding = size - (len(self.payload) + tsize)
         pbytes = bytearray([self.erased_val] * padding)
-        pbytes += bytearray([self.erased_val] * (tsize - len(boot_magic)))
+        pbytes += bytearray([self.erased_val] * (tsize - len(self.boot_magic)))
+        pbytes += self.boot_magic
         if self.confirm and not self.overwrite_only:
-            pbytes[-MAX_ALIGN] = 0x01  # image_ok = 0x01
-        pbytes += boot_magic
+            magic_size = 16
+            magic_align_size = align_up(magic_size, self.max_align)
+            image_ok_idx = -(magic_align_size + self.max_align)
+            pbytes[image_ok_idx] = 0x01  # image_ok = 0x01
         self.payload += pbytes
 
     @staticmethod

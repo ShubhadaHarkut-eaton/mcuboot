@@ -1,32 +1,30 @@
 #!/bin/bash
 
 if [ "$1" == "--help" ] || [ "$1" == "" ]; then
-	echo "Regenerate serial_recovery_cbor.c|h if the cddl_gen submodule is updated."
+	echo "Regenerate serial_recovery_cbor.c|h if the zcbor submodule is updated."
 	echo "Usage: $0 <copyright>"
-	echo "  e.g. $0 \"2020 Nordic Semiconductor ASA\""
+	echo "  e.g. $0 \"2022 Nordic Semiconductor ASA\""
 	exit -1
 fi
 
 add_copy_notice() {
 echo "$(printf '/*
- * This file has been %s from the cddl_gen submodule.
+ * This file has been %s from the zcbor library.
  * Commit %s
  */
 
-' "$2" "$(git -C ../../../ext/cddl_gen rev-parse HEAD)"; cat $1;)" > $1
+' "$2" "$(zcbor --version)"; cat $1;)" > $1
 }
 
-echo "Copying cbor_decode.c|h"
+echo "Copying zcbor_decode.c|h"
 copy_with_copy_notice() {
 	cp $1 $2
 	add_copy_notice $2 "copied"
 }
 
-copy_with_copy_notice ../../../ext/cddl_gen/src/cbor_decode.c cbor_decode.c
-copy_with_copy_notice ../../../ext/cddl_gen/include/cbor_decode.h cbor_decode.h cbor_decode.h
 
 echo "Generating serial_recovery_cbor.c|h"
-python3 ../../../ext/cddl_gen/scripts/cddl_gen.py -i serial_recovery.cddl -t Upload --oc serial_recovery_cbor.c --oh serial_recovery_cbor.h --time-header
+zcbor -c serial_recovery.cddl code -d -t Upload --oc serial_recovery_cbor.c --oh serial_recovery_cbor.h --time-header --copy-sources
 
 add_copyright() {
 echo "$(printf '/*
@@ -40,5 +38,10 @@ echo "$(printf '/*
 
 add_copyright serial_recovery_cbor.c "$1"
 add_copyright serial_recovery_cbor.h "$1"
-add_copy_notice serial_recovery_cbor.c "generated"
-add_copy_notice serial_recovery_cbor.h "generated"
+add_copyright serial_recovery_cbor_types.h "$1"
+add_copy_notice zcbor_decode.c "copied"
+add_copy_notice zcbor_encode.c "copied"
+add_copy_notice zcbor_common.c "copied"
+add_copy_notice zcbor_decode.h "copied"
+add_copy_notice zcbor_encode.h "copied"
+add_copy_notice zcbor_common.h "copied"

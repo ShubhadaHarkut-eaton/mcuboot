@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Copyright (c) 2017 Linaro Limited
+ * Copyright (c) 2021 Arm Limited
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,10 +69,18 @@ uint32_t bootutil_get_caps(void)
 #if defined(MCUBOOT_BOOTSTRAP)
     res |= BOOTUTIL_CAP_BOOTSTRAP;
 #endif
+#if defined(MCUBOOT_AES_256)
+    res |= BOOTUTIL_CAP_AES256;
+#endif
+#if defined(MCUBOOT_RAM_LOAD)
+    res |= BOOTUTIL_CAP_RAM_LOAD;
+#endif
+#if defined(MCUBOOT_DIRECT_XIP)
+    res |= BOOTUTIL_CAP_DIRECT_XIP;
+#endif
 #if defined(MCUBOOT_X509)
     res |= BOOTUTIL_CAP_X509;
 #endif
-
     return res;
 }
 

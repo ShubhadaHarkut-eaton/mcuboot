@@ -123,7 +123,7 @@ int flash_area_erase(const struct flash_area *, uint32_t off, uint32_t len);
 /*
  * Alignment restriction for flash writes.
  */
-uint16_t flash_area_align(const struct flash_area *);
+uint32_t flash_area_align(const struct flash_area *);
 
 /*
  * What is value is read from erased flash bytes.
@@ -135,6 +135,13 @@ uint8_t flash_area_erased_val(const struct flash_area *);
  */
 int flash_area_get_sectors(int fa_id, uint32_t *count,
   struct flash_sector *sectors);
+
+
+/* Retrieve the flash sector a given offset belongs to.
+ *
+ * Returns 0 on success, or an error code on failure.
+ */
+int flash_area_sector_from_off(uint32_t off, struct flash_sector *sector);
 
 /*
  * Similar to flash_area_get_sectors(), but return the values in an
