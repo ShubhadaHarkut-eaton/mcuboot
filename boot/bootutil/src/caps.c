@@ -78,7 +78,9 @@ uint32_t bootutil_get_caps(void)
 #if defined(MCUBOOT_DIRECT_XIP)
     res |= BOOTUTIL_CAP_DIRECT_XIP;
 #endif
-
+#if defined(MCUBOOT_X509)
+    res |= BOOTUTIL_CAP_X509;
+#endif
     return res;
 }
 
