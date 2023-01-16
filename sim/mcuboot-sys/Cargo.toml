@@ -21,8 +21,14 @@ sig-rsa3072 = []
 # Verify ECDSA (secp256r1) signatures.
 sig-ecdsa = []
 
+# Verify ECDSA (secp256r1) signatures using mbed TLS
+sig-ecdsa-mbedtls = []
+
 # Verify ED25519 signatures.
 sig-ed25519 = []
+
+# Use X509 certificates to validate signature
+x509 = []
 
 # Overwrite only upgrade
 overwrite-only = []
