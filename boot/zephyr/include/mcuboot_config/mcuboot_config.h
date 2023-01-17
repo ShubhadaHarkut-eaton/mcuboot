@@ -143,6 +143,10 @@
 #  endif
 #endif
 
+#ifdef CONFIG_BOOT_X509
+#define MCUBOOT_X509
+#endif
+
 #ifdef CONFIG_MCUBOOT_HW_DOWNGRADE_PREVENTION
 #define MCUBOOT_HW_ROLLBACK_PROT
 #endif
