@@ -30,7 +30,6 @@
 #include "bootutil/image.h"
 #include "bootutil/crypto/sha256.h"
 #include "bootutil/root_cert.h"
-#include "bootutil/sign_key.h"
 
 #include "image_util.h"
 
@@ -40,7 +39,7 @@ MCUBOOT_LOG_MODULE_DECLARE(mcuboot);
  * Current support is for EC256 signatures using SHA256 hashes.  We
  * allow some amount of data to hold the certificates.
  */
-#define SIG_BUF_SIZE 2048
+#define SIG_BUF_SIZE 512
 
 int verify_callback(void *buf, mbedtls_x509_crt *crt, int depth,
                     uint32_t *flags)
@@ -54,6 +53,7 @@ int verify_callback(void *buf, mbedtls_x509_crt *crt, int depth,
 
     return 0;
 }
+
 /*
  * Verify the integrity of the image.
  * Return non-zero if image coule not be validated/does not validate.
@@ -76,14 +76,13 @@ bootutil_img_validate(struct enc_key_data *enc_state, int image_index,
     mbedtls_x509_crt chain;
     mbedtls_x509_crt trust_ca;
     uint32_t flags;
+
     mbedtls_x509_crt_init(&chain);
-    int ret = -1;
 
     rc = bootutil_img_hash(enc_state, image_index, hdr, fap, tmp_buf,
                            tmp_buf_sz, hash, seed, seed_len);
     if (rc) {
-        ret = rc;
-        goto cleanup;
+        return rc;
     }
 
     if (out_hash) {
@@ -92,15 +91,13 @@ bootutil_img_validate(struct enc_key_data *enc_state, int image_index,
 
     rc = bootutil_tlv_iter_begin(&it, hdr, fap, IMAGE_TLV_ANY, false);
     if (rc) {
-        ret = rc;
-        goto cleanup;
+        return rc;
     }
 
     while (true) {
         rc = bootutil_tlv_iter_next(&it, &off, &len, &type);
         if (rc < 0) {
-            ret = -1;
-            goto cleanup;
+            return -1;
         } else if (rc > 0) {
             break;
         }
@@ -111,100 +108,67 @@ bootutil_img_validate(struct enc_key_data *enc_state, int image_index,
              * present.
              */
             if (len != sizeof(hash)) {
-                ret = -1;
-                goto cleanup;
+                return -1;
             }
             rc = flash_area_read(fap, off, buf, sizeof hash);
             if (rc) {
-                ret = rc;
-                goto cleanup;
+                return rc;
             }
             if (memcmp(hash, buf, sizeof(hash))) {
                 BOOT_LOG_ERR("Corrupt hash");
-                ret = -1;
-                goto cleanup;
+                return -1;
             }
 
             sha256_valid = true;
         } else if (type == IMAGE_TLV_X509) {
-            if (len > sizeof (buf)) {
-                ret = -1;
-                goto cleanup;
+            if (len > sizeof buf) {
+                return -1;
             }
             rc = flash_area_read(fap, off, buf, len);
             if (rc) {
-                ret = rc;
-                goto cleanup;
+                return rc;
             }
-            rc =  mbedtls_x509_crt_parse_der(&chain, buf, len);
+            // BOOT_LOG_ERR("Cert: %d bytes", len);
+            rc = mbedtls_x509_crt_parse_der(&chain, buf, len);
             if (rc) {
                 BOOT_LOG_ERR("Parse error %d", rc);
-                ret = -1;
-                goto cleanup;
+                /* TODO After init, should cleanup */
+                return -1;
             }
-
-
         } else if (type == IMAGE_TLV_ECDSA256) {
             /* Finish with the root certificate. */
             mbedtls_x509_crt_init(&trust_ca);
-            rc =  mbedtls_x509_crt_parse_der(&trust_ca, bootutil_root_cert,
+            rc = mbedtls_x509_crt_parse_der(&trust_ca, bootutil_root_cert,
                                             bootutil_root_cert_len);
             if (rc) {
                 BOOT_LOG_ERR("Parser error: %d", rc);
-                ret = -1;
-                goto cleanup;
+                /* TODO: After init, should cleanup */
+                return -1;
             }
 
+            // BOOT_LOG_ERR("Verify chain");
             flags = 0;
             rc = mbedtls_x509_crt_verify(&chain, &trust_ca, NULL,
                                          NULL,
+                                         // "MCUboot sample signing key",
                                          &flags,
                                          verify_callback, NULL);
+            // BOOT_LOG_ERR("Verify chain: %d", rc);
             if (rc == 0) {
-            	 // validate the image signature
-            	  if (len > sizeof (buf)) {
-            		  	  	  	ret = -1;
-            		  	  	  	goto cleanup;
-            	            }
-            	            rc = flash_area_read(fap, off, buf, len);
-            	            if (rc) {
-            	            	ret = rc;
-            	            	goto cleanup;
-            	            }
-            	            //Go to the last cert in the chain (product cert) to validate the image signature
-            	            mbedtls_x509_crt *next_cert = &chain;
-            	            while(next_cert->next != 0x00)
-            	            {
-            	            	next_cert=next_cert->next;
-            	            }
-            	            //using Publick key context from last cert(product cert) to validate the image signature
-            		        rc = mbedtls_pk_verify( &next_cert->pk, next_cert->private_sig_md, hash, sizeof(hash),buf,len );
-            		         if(rc == 0)
-            		         {
-            		            cert_valid = true;
-            		            ret=rc;
-            		         }
-            	            }
-
-                
+                    cert_valid = true;
+            }
         } else {
             BOOT_LOG_ERR("TLV: %d", type);
         }
     }
 
     if (!sha256_valid) {
-        ret = -1;
-    	goto cleanup;
+        return -1;
     }
     if (!cert_valid) {
-        ret = -1;
-    	goto cleanup;
+        return -1;
     }
-    cleanup:
-	mbedtls_x509_crt_free(&chain);
-	mbedtls_x509_crt_free(&trust_ca);
 
-
-    return(ret);
+    return 0;
 }
 #endif /* MCUBOOT_X509 */
