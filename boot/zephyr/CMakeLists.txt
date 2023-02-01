@@ -47,7 +47,8 @@ assert_exists(FIAT_DIR)
 set(MBEDTLS_ASN1_DIR "${MCUBOOT_DIR}/ext/mbedtls-asn1")
 assert_exists(MBEDTLS_ASN1_DIR)
 set(NRF_DIR "${MCUBOOT_DIR}/ext/nrf")
-
+# Path to mbed-tls' library.
+set(MBEDTLS_DIR "${MCUBOOT_DIR}/ext/mbedtls")
 if(CONFIG_BOOT_USE_NRF_CC310_BL)
 set(NRFXLIB_DIR ${ZEPHYR_BASE}/../nrfxlib)
 if(NOT EXISTS ${NRFXLIB_DIR})
