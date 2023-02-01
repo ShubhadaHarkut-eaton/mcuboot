@@ -154,7 +154,7 @@ if(CONFIG_BOOT_SIGNATURE_TYPE_ECDSA_P256 OR CONFIG_BOOT_ENCRYPT_EC256 OR CONFIG_
     MBEDTLS_CONFIG_FILE="${CMAKE_CURRENT_LIST_DIR}/include/mcuboot-mbedtls-cfg.h"
     )
   endif()
-  if(CONFIG_BOOT_USE_TINYCRYPT)
+    if(CONFIG_BOOT_USE_TINYCRYPT)
   # When using ECDSA signatures, pull in our copy of the tinycrypt library.
   zephyr_library_include_directories(
     ${BOOT_DIR}/zephyr/include

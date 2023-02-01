@@ -72,6 +72,16 @@ keygens = {
 valid_formats = ['openssl', 'pkcs8']
 
 
+def load_cert(filename):
+    # open certificate file and read data in binary format 
+    try:
+        with open(filename, 'rb') as file:
+            value = file.read()
+    except FileNotFoundError:
+        msg = " The file " + filename + " does not exist"
+        print(msg)
+    return value
+
 def load_signature(sigfile):
     with open(sigfile, 'rb') as f:
         signature = base64.b64decode(f.read())
@@ -422,6 +432,13 @@ def sign(key, public_key_format, cert, align, version, pad_sig, header_size,
         else:
             custom_tlvs[tag] = value.encode('utf-8')
 
+
+    # Get list of certificates from the command-line
+    index = 0
+    certificates = {}
+    for filepath in cert:
+        certificates[index] = load_cert(filepath)
+        index += 1
     # Allow signature calculated externally.
     raw_signature = load_signature(fix_sig) if fix_sig else None
 
