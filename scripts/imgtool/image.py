@@ -61,6 +61,7 @@ IMAGE_F = {
 TLV_VALUES = {
         'KEYHASH': 0x01,
         'PUBKEY': 0x02,
+        'X509': 0x03,
         'SHA256': 0x10,
         'RSA2048': 0x20,
         'ECDSA224': 0x21,
@@ -303,7 +304,7 @@ class Image():
                 format=PublicFormat.Raw)
         return cipherkey, ciphermac, pubk
 
-    def create(self, key, public_key_format, enckey, dependencies=None,
+    def create(self, key, public_key_format, enckey, certificates=None, dependencies=None,
                sw_type=None, custom_tlvs=None, encrypt_keylen=128, clear=False, fixed_sig=None, pub_key=None, vector_to_sign=None):
         self.enckey = enckey
 
@@ -433,6 +434,12 @@ class Image():
         digest = sha.digest()
 
         tlv.add('SHA256', digest)
+
+        # add certificates value as TLV
+        if certificates is not None:
+            # Certificates dictionary contain Tag value field inside value part. 
+            for index, value in certificates.items():
+                tlv.add('X509', value)
 
         if vector_to_sign == 'payload':
             # Stop amending data to the image

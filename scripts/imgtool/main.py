@@ -72,6 +72,16 @@ keygens = {
 valid_formats = ['openssl', 'pkcs8']
 
 
+def load_cert(filename):
+    # open certificate file and read data in binary format 
+    try:
+        with open(filename, 'rb') as file:
+            value = file.read()
+    except FileNotFoundError:
+        msg = " The file " + filename + " does not exist"
+        print(msg)
+    return value
+
 def load_signature(sigfile):
     with open(sigfile, 'rb') as f:
         signature = base64.b64decode(f.read())
@@ -82,6 +92,17 @@ def save_signature(sigfile, sig):
     with open(sigfile, 'wb') as f:
         signature = base64.b64encode(sig)
         f.write(signature)
+
+
+def load_cert(filename):
+    # open certificate file and read data in binary format 
+    try:
+        with open(filename, 'rb') as file:
+            value = file.read()
+    except FileNotFoundError:
+        msg = " The file " + filename + " does not exist"
+        print(msg)
+    return value
 
 
 def load_key(keyfile):
@@ -328,6 +349,14 @@ class BasedIntParamType(click.ParamType):
 @click.option('-v', '--version', callback=validate_version,  required=True)
 @click.option('--align', type=click.Choice(['1', '2', '4', '8', '16', '32']),
               required=True)
+@click.option('--cert', required=False, nargs=1, default=[], multiple=True,
+              metavar='[filename]',
+              help='This argument will be used to provide the certificate file '
+                   'path. Specify the option 2 times to add Intermediate and '
+                   'Product certificates. Certificate need to be pass in sequence '
+                   'i.e 1st Intermediate and 2nd Product certificate. Root '
+                   'Certificate not required to pass as argument. It should be part of '
+                   'bootloader. Certificate TLV will hold the "X509" i.e 0x03 as tag value.')
 @click.option('--max-align', type=click.Choice(['8', '16', '32']),
               required=False,
               help='Maximum flash alignment. Set if flash alignment of the '
@@ -352,7 +381,7 @@ class BasedIntParamType(click.ParamType):
 @click.command(help='''Create a signed or unsigned image\n
                INFILE and OUTFILE are parsed as Intel HEX if the params have
                .hex extension, otherwise binary format is used''')
-def sign(key, public_key_format, align, version, pad_sig, header_size,
+def sign(key, public_key_format, cert, align, version, pad_sig, header_size,
          pad_header, slot_size, pad, confirm, max_sectors, overwrite_only,
          endian, encrypt_keylen, encrypt, infile, outfile, dependencies,
          load_addr, hex_addr, erased_val, save_enctlv, security_counter,
@@ -403,6 +432,13 @@ def sign(key, public_key_format, align, version, pad_sig, header_size,
         else:
             custom_tlvs[tag] = value.encode('utf-8')
 
+
+    # Get list of certificates from the command-line
+    index = 0
+    certificates = {}
+    for filepath in cert:
+        certificates[index] = load_cert(filepath)
+        index += 1
     # Allow signature calculated externally.
     raw_signature = load_signature(fix_sig) if fix_sig else None
 
@@ -420,7 +456,7 @@ def sign(key, public_key_format, align, version, pad_sig, header_size,
             'value': raw_signature
         }
 
-    img.create(key, public_key_format, enckey, dependencies, boot_record,
+    img.create(key, public_key_format, enckey, certificates, dependencies, boot_record,
                custom_tlvs, int(encrypt_keylen), clear, baked_signature,
                pub_key, vector_to_sign)
     img.save(outfile, hex_addr)
