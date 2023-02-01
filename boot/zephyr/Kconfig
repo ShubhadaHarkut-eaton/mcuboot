@@ -7,7 +7,25 @@
 mainmenu "MCUboot configuration"
 
 comment "MCUboot-specific configuration options"
-
+config MCUBOOT_BOOTUTIL_LIB
+	bool
+	# Hidden option
+	default n
+	help
+	  Use bootutil library from zephyr.
+	  
+config BOOT_X509
+bool "enable X509 cert"
+default n
+help
+	Enables the X509 cert.
+	
+config SERVER_SIGNING
+	bool "select the root cert for Server signing"
+	default n
+	help
+		Selects the root cert for server signing
+	
 # Hidden option to mark a project as MCUboot
 config MCUBOOT
 	default y
@@ -30,6 +48,7 @@ config BOOT_USE_TINYCRYPT
 	# When building for ECDSA, we use our own copy of mbedTLS, so the
 	# Zephyr one must not be enabled or the MBEDTLS_CONFIG_FILE macros
 	# will collide.
+	depends on ! MBEDTLS
 	help
 	  Use TinyCrypt for crypto primitives.
 
@@ -40,6 +59,7 @@ config BOOT_USE_CC310
 	# When building for ECDSA, we use our own copy of mbedTLS, so the
 	# Zephyr one must not be enabled or the MBEDTLS_CONFIG_FILE macros
 	# will collide.
+	depends on ! MBEDTLS
 	help
 	  Use cc310 for crypto primitives.
 
@@ -96,6 +116,12 @@ choice BOOT_ECDSA_IMPLEMENTATION
 config BOOT_ECDSA_TINYCRYPT
 	bool "Use tinycrypt"
 	select BOOT_USE_TINYCRYPT
+
+config BOOT_ECDSA_X509
+bool "USE X509 with X509 signature"
+	select BOOT_X509
+	select BOOT_USE_MBEDTLS
+	select MBEDTLS
 
 config BOOT_ECDSA_CC310
 	bool "Use CC310"
