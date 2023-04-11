@@ -7,7 +7,19 @@
 mainmenu "MCUboot configuration"
 
 comment "MCUboot-specific configuration options"
-
+config MCUBOOT_BOOTUTIL_LIB
+	bool
+	# Hidden option
+	default n
+	help
+	  Use bootutil library from zephyr.
+	  
+config BOOT_X509
+bool "enable X509 cert"
+default n
+help
+	Enables the X509 cert.
+	
 # Hidden option to mark a project as MCUboot
 config MCUBOOT
 	default y
